@@ -1,0 +1,28 @@
+[package]
+name = "nico-oshi"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+base64 = "0.21.7"
+elliptic-curve = { version = "0.13.8", features = ["ecdh"] }
+h2 = "0.4.1"
+http = "1.0.0"
+p256 = { version = "0.13.2", features = ["ecdh"] }
+rand = { version = "0.8.5", features = ["getrandom"] }
+reqwest = { version = "0.11.23", features = ["json", "blocking", "native-tls"] }
+reqwest_cookie_store = "0.6.0"
+serde = { version = "1.0.195", features = ["derive", "serde_derive"] }
+serde_json = "1.0.111"
+tokio = { version = "1.35.1", features = ["full"] }
+uuid = { version = "1.6.1", features = ["v4", "serde"] }
+websocket = "0.27.0"
+hyper = { version = "1", features = ["full"] }
+http-body-util = "0.1"
+hyper-util = { version = "0.1", features = ["full"] }
+surf = "2.3.2"
+hkdf = "0.12.4"
+sha2 = "0.10.8"
+aes-gcm = "0.10.3"
