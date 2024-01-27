@@ -32,8 +32,19 @@ use serde_json::json;
 use uuid::Uuid;
 use websocket::{
     header::{ContentType, Cookie},
+    stream::sync::NetworkStream,
     Message, OwnedMessage,
 };
+
+use autopush::AutoPushClient;
+use endpoint::NicoPushEndpointClient;
+
+use crate::autopush::{
+    ClientHelloMessage, ClientRegisterMessage, ServerHelloMessage, ServerRegisterMessage,
+};
+
+mod autopush;
+mod endpoint;
 
 const AUTOPUSH_ENDPOINT: &str = "wss://push.services.mozilla.com/";
 const NICONICO_WEBPUSH_ENDPOINT: &str =
@@ -43,103 +54,40 @@ const NICONICO_WEBPUSH_ENDPOINT: &str =
 async fn main() {
     let niconico_user_session = std::env::var("NICONICO_USER_SESSION").unwrap();
     let niconico_user_session_secure = std::env::var("NICONICO_USER_SESSION_SECURE").unwrap();
+    let niconico_application_server_key = std::env::var("NICONICO_APPLICATION_SERVER_KEY").unwrap();
 
-    let raw_cookie = std::env::var("RAW_COOKIE").unwrap();
+    let autopush_client = AutoPushClient::new(AUTOPUSH_ENDPOINT, true);
+    let endpoint_client =
+        NicoPushEndpointClient::new(NICONICO_WEBPUSH_ENDPOINT.to_string(), niconico_user_session);
 
-    println!("{}", AUTOPUSH_ENDPOINT);
-    let mut wsconn = websocket::ClientBuilder::new(AUTOPUSH_ENDPOINT)
-        .unwrap()
-        .connect(None)
+    let hello_resp: ServerHelloMessage = autopush_client
+        .post_message(ClientHelloMessage::new(true, None))
         .unwrap();
 
-    let rs = serde_json::to_string(&ClientHelloMessage {
-        message_type: "hello".to_string(),
-        use_webpush: Some(true),
-        // uaid: UAID.to_string(),
-    })
-    .unwrap();
-    println!("{}", rs);
-
-    let msg = Message::text(rs);
-
-    wsconn.send_message(&msg).unwrap();
-    let r = wsconn.recv_message();
-    println!("{:?}", r);
-
     let channel_id = Uuid::new_v4().to_string();
+    let register_resp: ServerRegisterMessage = autopush_client
+        .post_message(ClientRegisterMessage::new(
+            channel_id,
+            niconico_application_server_key,
+        ))
+        .unwrap();
 
-    let register_message = serde_json::to_string(&ClientRegisterMessage {
-        message_type: "register".to_string(),
-        channel_id: channel_id.clone(),
-    })
-    .unwrap();
-
-    println!("{}", register_message);
-
-    let msg = Message::text(register_message);
-
-    wsconn.send_message(&msg).unwrap();
-    let push_endpoint = {
-        if let OwnedMessage::Text(register_resp) = wsconn.recv_message().unwrap() {
-            println!("{:?}", register_resp);
-            let resp_model = serde_json::from_str::<ServerRegisterMessage>(&register_resp).unwrap();
-            println!("{:?}", register_resp);
-            resp_model.push_endpoint
-        } else {
-            panic!("register response is not text");
-        }
-    };
+    let push_endpoint = register_resp.push_endpoint;
 
     println!("{}", push_endpoint);
 
+    let auth: Vec<u8> = (0..15).map(|_| rand::random::<u8>()).collect();
     let secret_key = p256::ecdh::EphemeralSecret::random(&mut OsRng);
     let public_key = secret_key.public_key();
     let public_key_string = public_key.to_sec1_bytes().to_vec();
-    let auth: Vec<u8> = (0..15).map(|_| rand::random::<u8>()).collect();
 
-    let register_webpush_endpoint_request = RegisterWebPushEndpointRequest::new(
-        auth.clone(),
-        push_endpoint.clone(),
-        public_key_string.clone(),
-    );
-
-    println!("{:?}", register_webpush_endpoint_request);
-
-    // let client = reqwest::blocking::Client::new();
-
-    let mut headers: HeaderMap = HeaderMap::new();
-    headers.insert("X-Frontend-Id", HeaderValue::from_static("9"));
-    headers.insert(
-        "X-Request-With",
-        // "https://account.nicovideo.jp/my/account".parse().unwrap(),
-        HeaderValue::from_static("https://account.nicovideo.jp/my/account"),
-    );
-    headers.insert("Accept", HeaderValue::from_static("application/json"));
-    headers.insert("Cookie", HeaderValue::from_str(&raw_cookie).unwrap());
-    headers.insert(
-        USER_AGENT,
-        HeaderValue::from_static(
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0",
-        ),
-    );
-    headers.insert("Content-Type", HeaderValue::from_static("application/json"));
-
-    println!(
-        "{}",
-        serde_json::to_string(&register_webpush_endpoint_request).unwrap()
-    );
-
-    let client = reqwest::Client::builder()
-        .default_headers(headers.clone())
-        .build()
-        .unwrap();
-
-    let req = client
-        .post(NICONICO_WEBPUSH_ENDPOINT)
-        // .headers(headers)
-        .json(&register_webpush_endpoint_request);
-    println!("{:?}", req);
-    let resp = req.send().await;
+    endpoint_client
+        .register(
+            push_endpoint.clone(),
+            auth.clone(),
+            public_key_string.clone(),
+        )
+        .await;
 
     loop {
         let msg = wsconn.recv_message();
@@ -218,71 +166,4 @@ async fn main() {
             },
         }
     }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct ClientHelloMessage {
-    #[serde(rename = "messageType")]
-    message_type: String,
-    use_webpush: Option<bool>,
-    // uaid: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct ClientRegisterMessage {
-    #[serde(rename = "messageType")]
-    message_type: String,
-    #[serde(rename = "channelID")]
-    channel_id: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct ServerRegisterMessage {
-    #[serde(rename = "messageType")]
-    message_type: String,
-    #[serde(rename = "channelID")]
-    channel_id: String,
-    status: u32,
-    #[serde(rename = "pushEndpoint")]
-    push_endpoint: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct RegisterWebPushEndpointRequest {
-    #[serde(rename = "destApp")]
-    dest_app: String,
-    endpoint: RegisterWebPushEndpointRequestEndpoint,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct RegisterWebPushEndpointRequestEndpoint {
-    endpoint: String,
-    auth: String,
-    p256dh: String,
-}
-
-impl RegisterWebPushEndpointRequest {
-    fn new(auth: Vec<u8>, endpoint: String, p256dh: Vec<u8>) -> Self {
-        println!("{:?}", p256dh);
-        let auth = URL_SAFE_NO_PAD.encode(&auth);
-        let p256dh = URL_SAFE_NO_PAD.encode(&p256dh);
-
-        Self {
-            dest_app: "nico_account_webpush".to_string(),
-            endpoint: RegisterWebPushEndpointRequestEndpoint {
-                endpoint,
-                auth,
-                p256dh,
-            },
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct Notification {
-    #[serde(rename = "messageType")]
-    message_type: String,
-    #[serde(rename = "channelID")]
-    channel_id: String,
-    data: String,
 }
