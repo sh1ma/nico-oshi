@@ -31,7 +31,7 @@ impl NicoPushEndpointClient {
         if resp.status().is_success() {
             println!("register success");
         } else {
-            println!("failed");
+            println!("register failed: {:?}", resp.text().await.unwrap());
         }
     }
 }
