@@ -1,40 +1,6 @@
-use std::{
-    collections::HashMap,
-    fmt::format,
-    hash::Hash,
-    io::{Cursor, Read},
-    net::TcpStream,
-};
+use elliptic_curve::rand_core::OsRng;
 
-use aes_gcm::{aead::AeadMut, Aes128Gcm, KeyInit};
-use elliptic_curve::{
-    bigint::Random,
-    ecdh::{self, EphemeralSecret},
-    pkcs8::der::{pem::Base64Encoder, Encode},
-    rand_core::{le, OsRng},
-    CurveArithmetic, PrimeCurveArithmetic,
-};
-
-use base64::engine::{
-    general_purpose::{URL_SAFE, URL_SAFE_NO_PAD},
-    Engine as _,
-};
-use h2::client;
-
-use hkdf::hmac::Hmac;
-use hyper_util::rt::TokioIo;
-use reqwest::{
-    header::{HeaderMap, HeaderValue, USER_AGENT},
-    Version,
-};
-use serde::*;
-use serde_json::json;
 use uuid::Uuid;
-use websocket::{
-    header::{ContentType, Cookie},
-    stream::sync::NetworkStream,
-    Message, OwnedMessage,
-};
 
 use autopush::AutoPushClient;
 use endpoint::NicoPushEndpointClient;
@@ -52,8 +18,8 @@ const NICONICO_WEBPUSH_ENDPOINT: &str =
 
 #[tokio::main]
 async fn main() {
-    let niconico_user_session = std::env::var("NICONICO_USER_SESSION").unwrap();
-    let niconico_user_session_secure = std::env::var("NICONICO_USER_SESSION_SECURE").unwrap();
+    // let niconico_user_session = std::env::var("NICONICO_USER_SESSION").unwrap();
+    // let niconico_user_session_secure = std::env::var("NICONICO_USER_SESSION_SECURE").unwrap();
     let raw_cookie = std::env::var("RAW_COOKIE").unwrap();
     let niconico_application_server_key = std::env::var("NICONICO_APPLICATION_SERVER_KEY").unwrap();
 
@@ -61,7 +27,7 @@ async fn main() {
     let endpoint_client =
         NicoPushEndpointClient::new(NICONICO_WEBPUSH_ENDPOINT.to_string(), raw_cookie);
 
-    let hello_resp: ServerHelloMessage = autopush_client
+    let _: ServerHelloMessage = autopush_client
         .post_hello(ClientHelloMessage::new(true, None, None))
         .unwrap();
 
